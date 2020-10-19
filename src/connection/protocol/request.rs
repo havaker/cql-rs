@@ -2,17 +2,18 @@ use bytes::BufMut;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 
-pub enum Request {
+pub enum Request<'a> {
     Startup,
-    Query,
+    Query(&'a str),
 }
 
-impl Request {
+impl<'a> Request<'a> {
     pub async fn write<T: AsyncWriteExt + Unpin>(
         &self,
         stream_id: u16,
         writer: &mut T,
     ) -> Result<(), std::io::Error> {
+        // TODO move writing header to another funciton
         writer.write_u8(0x04).await?; // protocol version for request
         writer.write_u8(0).await?; // no flags
         writer.write_u16(stream_id).await?;
@@ -26,7 +27,7 @@ impl Request {
     fn opcode(&self) -> u8 {
         match self {
             Self::Startup => 0x01,
-            Self::Query => 0x07,
+            Self::Query(_) => 0x07,
         }
     }
 
@@ -39,7 +40,7 @@ impl Request {
                 options.insert("CQL_VERSION".to_string(), "3.0.0".to_owned());
                 return serialize_map(options);
             }
-            Self::Query => Vec::new(),
+            Self::Query(q) => serialize_query(q),
         }
     }
 }
@@ -48,14 +49,34 @@ impl Request {
 fn serialize_map(map: HashMap<String, String>) -> Vec<u8> {
     let mut buf = vec![];
 
+    // [short] map length
     buf.put_u16(map.len() as u16);
     for (k, v) in map {
+        // [short string] key
         buf.put_u16(k.len() as u16);
         buf.put_slice(&k[..].as_bytes());
 
+        // [short string] value
         buf.put_u16(v.len() as u16);
         buf.put_slice(&v[..].as_bytes());
     }
+
+    return buf;
+}
+
+// https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L309
+fn serialize_query(query: &str) -> Vec<u8> {
+    let mut buf = vec![];
+
+    // [long string] with query
+    buf.put_u32(query.len() as u32);
+    buf.put_slice(query.as_bytes());
+
+    // [consistency] ONE
+    buf.put_u16(0x0001);
+
+    // [byte] flags - none
+    buf.put_u8(0);
 
     return buf;
 }
