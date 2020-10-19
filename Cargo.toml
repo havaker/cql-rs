@@ -5,3 +5,4 @@ authors = ["; )"]
 edition = "2018"
 
 [dependencies]
+tokio = {version = "0.3.0", features = ["net", "io-util", "sync"]}
