@@ -59,3 +59,35 @@ fn serialize_map(map: HashMap<String, String>) -> Vec<u8> {
 
     return buf;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpStream;
+    use tokio_test::io::Builder;
+
+    #[test]
+    fn test_startup_serialization() {
+        let expected_startup = vec![
+            4u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8, 22u8, 0u8, 1u8, 0u8, 11u8, 67u8, 81u8, 76u8,
+            95u8, 86u8, 69u8, 82u8, 83u8, 73u8, 79u8, 78u8, 0u8, 5u8, 51u8, 46u8, 48u8, 46u8, 48u8,
+        ];
+
+        let req = Request::Startup;
+        tokio_test::block_on(async {
+            let mut mock = Builder::new().write(expected_startup.as_slice()).build();
+            req.write(0, &mut mock).await.unwrap();
+        });
+    }
+
+    #[test]
+    #[ignore]
+    fn test_startup_tcp() {
+        let req = Request::Startup;
+
+        tokio_test::block_on(async {
+            let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+            req.write(0, &mut stream).await.unwrap();
+        });
+    }
+}
