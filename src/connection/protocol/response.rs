@@ -5,14 +5,14 @@ use tokio::io::AsyncReadExt;
 #[derive(PartialEq, Debug)]
 pub enum Response {
     Ready,
-    Error(ScyllaError),
+    Error(ErrorMessage),
     Result,
 
     Invalid,
 }
 
 #[derive(PartialEq, Default, Debug)]
-pub struct ScyllaError {
+pub struct ErrorMessage {
     message: String,
     code: u32,
 }
@@ -87,6 +87,19 @@ fn make_invalid_response_error() -> std::io::Error {
 mod tests {
     use super::*;
     use tokio_test::io::Builder;
+
+    #[test]
+    fn test_ready_response_reading() {
+        let ready_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
+
+        tokio_test::block_on(async {
+            let mut mock = Builder::new().read(&ready_response).build();
+            let (rsp, stream_id) = Response::read(&mut mock).await.unwrap();
+
+            assert_eq!(rsp, Response::Ready);
+            assert_eq!(stream_id, 0);
+        });
+    }
 
     #[test]
     fn test_ready_response_reading() {
