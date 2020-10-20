@@ -1,4 +1,5 @@
 mod protocol;
+mod simple;
 mod streams;
 
 use crate::Query;
