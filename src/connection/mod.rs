@@ -1,4 +1,8 @@
+mod protocol;
+
 use crate::Query;
+use protocol::types::StreamId;
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -7,10 +11,6 @@ use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-
-mod protocol;
-
-type StreamId = u16;
 
 // Stream keeps information about protocol stream with given id
 struct Stream {
@@ -285,7 +285,21 @@ struct Connection {
 impl Connection {
     pub async fn new<A: ToSocketAddrs>(address: A) -> Result<Self, std::io::Error> {
         let tcp_stream: TcpStream = tokio::net::TcpStream::connect(address).await?;
-        let (read_half, write_half) = tcp_stream.into_split();
+        let (tcp_read_half, tcp_write_half) = tcp_stream.into_split();
+        let (mut tcp_reader, mut tcp_writer) = (BufReader::new(tcp_read_half), BufWriter::new(tcp_write_half));
+
+        // Send startup request
+        let startup_request = protocol::Request::Startup;
+        startup_request.write(1, &mut tcp_writer).await ?;
+
+        // Receive response
+        /*
+        let response: protocol::Response = protocol::Response::read(&mut tcp_reader).await ?;
+        match response {
+            protocol::Response::Ready => {/* Ok connection succesfull */},
+            _ => return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to connect to server - response was not Ready"))
+        };
+        */
 
         let streams_manager: Arc<StreamsManager> = StreamsManager::new();
 
@@ -293,27 +307,23 @@ impl Connection {
         {
             let streams_manager = streams_manager.clone();
             tokio::spawn(async move {
-                let response_reader: BufReader<OwnedReadHalf> = BufReader::new(read_half);
+                let mut tcp_reader = tcp_reader; // Explicitly move tcp_reader into async task
                 loop {
-                    // TODO read response
-                    let response: protocol::Response = protocol::Response::Ready;
-                    streams_manager.on_response_received(response);
+                    // read response
+                    // let response: protocol::Response = protocol::Response::read(&mut tcp_reader).await ?;
+                    //streams_manager.on_response_received(response);
                 }
             });
         }
 
         // Start request sender task
-        let (sender_channel_sender, mut sender_channel_receiver): (
-            tokio::sync::mpsc::Sender<(protocol::Request<'static>, StreamId)>,
-            tokio::sync::mpsc::Receiver<(protocol::Request<'static>, StreamId)>,
-        ) = tokio::sync::mpsc::channel(1);
+        let (sender_channel_sender, mut sender_channel_receiver): (tokio::sync::mpsc::Sender<(protocol::Request<'static>, StreamId)>, tokio::sync::mpsc::Receiver<(protocol::Request<'static>, StreamId)>) = tokio::sync::mpsc::channel(1);
         {
             let streams_manager = streams_manager.clone();
             tokio::spawn(async move {
-                let mut request_sender: BufWriter<OwnedWriteHalf> = BufWriter::new(write_half);
-
+                let mut tcp_writer = tcp_writer;
                 while let Some((request, stream_id)) = sender_channel_receiver.recv().await {
-                    request.write(stream_id, &mut request_sender).await.unwrap();
+                    request.write(stream_id, &mut tcp_writer).await.unwrap();
                 }
             });
         }
@@ -332,18 +342,13 @@ impl Connection {
 
         let stream_handle: StreamHandle = self.streams_manager.register_stream().await;
 
-        self.schedule_request_send(request, stream_handle.get_stream_id())
-            .await;
+        self.schedule_request_send(request, stream_handle.get_stream_id()).await;
         stream_handle.mark_request_sent();
 
         return stream_handle.get_response().await;
     }
 
-    async fn schedule_request_send(
-        &mut self,
-        request: protocol::Request<'static>,
-        stream_id: StreamId,
-    ) {
+    async fn schedule_request_send(&mut self, request: protocol::Request<'static>, stream_id: StreamId) {
         if let Err(_) = self.sender_channel.send((request, stream_id)).await {
             panic!("oops ending request failed"); //TODO make graceful
         }
