@@ -3,15 +3,29 @@ mod streams;
 
 use crate::Query;
 use protocol::types::StreamId;
+use protocol::{Request, Response};
 use std::sync::Arc;
 use streams::{StreamHandle, StreamsManager};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::io::AsyncWriteExt;
+use protocol::response::ErrorMessage;
 
 struct Connection {
     streams_manager: Arc<StreamsManager>,
     sender_channel: tokio::sync::mpsc::Sender<(protocol::Request<'static>, StreamId)>,
+}
+
+#[derive(Debug)]
+enum QueryError {
+    IOError(std::io::Error),
+    Message(ErrorMessage)
+}
+
+impl From<std::io::Error> for QueryError {
+    fn from(io_error: std::io::Error) -> QueryError {
+        return QueryError::IOError(io_error);
+    }
 }
 
 impl Connection {
@@ -72,7 +86,6 @@ impl Connection {
                     request.write(stream_id, &mut tcp_writer).await.unwrap();
                     tcp_writer.flush().await.unwrap();
                     println!("Sent a query!");
-                    panic!();
                 }
             });
         }
@@ -84,50 +97,54 @@ impl Connection {
     }
 
     pub async fn query(
-        &mut self,
+        &self,
         query_to_perform: Query,
-    ) -> Result<protocol::Response, std::io::Error> {
+    ) -> Result<(), QueryError> {
         let request: protocol::Request = protocol::Request::Query(&query_to_perform.get_query_text());
 
         let stream_handle: StreamHandle = self.streams_manager.register_stream().await;
 
         self.schedule_request_send(request, stream_handle.get_stream_id()).await;
-        // What if we receive response here?
         stream_handle.mark_request_sent();
 
-        return stream_handle.get_response().await;
+        match stream_handle.get_response().await {
+            Err(io_error) => return Err(QueryError::IOError(io_error)),
+            Ok(Response::Result) => return Ok(()),
+            Ok(Response::Error(message)) => return Err(QueryError::Message(message)),
+            _ => panic!("Strange response!")
+        };
     }
 
     async fn schedule_request_send(
-        &mut self,
+        &self,
         request: protocol::Request<'static>,
         stream_id: StreamId,
     ) {
-        if let Err(_) = self.sender_channel.send((request, stream_id)).await {
+        if let Err(_) = self.sender_channel.clone().send((request, stream_id)).await {
             panic!("oops ending request failed"); //TODO make graceful
         }
     }
 }
 
 
+use futures::{
+    future::FutureExt, // for `.fuse()`
+    pin_mut,
+    select,
+};
+
 #[cfg(test)]
-#[ignore]
 #[test]
 fn test_connect_to_scylla() {
     tokio_test::block_on(async {
         let mut conn = Connection::new("172.17.0.4:9042").await.unwrap();
         println!("Connected!");
         
-        println!("{:?}", conn.query(Query::new("sadsdasd")).await.unwrap());
-        panic!();
-        /*
+        //println!("{:?}", conn.query(Query::new("sadsdasd")).await.unwrap());
 
         let query1 = conn.query(Query::new("sadsdasd"));
         let query2 = conn.query(Query::new("sadsdasd"));
 
-        drop(conn);
-
         futures::join!(query1, query2);
-        */
     });
 }

@@ -86,7 +86,8 @@ mod tests {
     use tokio_test::io::Builder;
 
     #[test]
-    fn test_ready_response_reading() {
+    #[ignore]
+    fn test_startup_scylla_response() {
         let ready_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
 
         tokio_test::block_on(async {

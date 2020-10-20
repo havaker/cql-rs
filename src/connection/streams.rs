@@ -35,6 +35,17 @@ enum StreamState {
     },
 }
 
+fn print_state(state: &StreamState) {
+    match state {
+        Free => println!("Free"),
+        Registered => println!("Registered"),
+        Sent => println!("Sent"),
+        SentButAbandoned => println!("SentButAbandoned"),
+        Responded => println!("Responded"),
+        Finished => println!("Finished"),
+    };
+}
+
 type SharedStream = Arc<std::sync::Mutex<Stream>>;
 
 // StreamsManager coordinates assigning and freeing streams plus receiving messages
@@ -49,7 +60,7 @@ impl StreamsManager {
         let total_streams_possible: usize = (StreamId::max_value() as usize) + 1;
 
         let mut streams: Vec<SharedStream> = Vec::with_capacity(total_streams_possible);
-        for i in 0..total_streams_possible {
+        for i in (1..total_streams_possible).rev() {
             streams.push(Arc::new(std::sync::Mutex::new(Stream {
                 id: i as StreamId,
                 response_waker: None,
@@ -90,7 +101,11 @@ impl StreamsManager {
             locked_stream.state = StreamState::Registered {
                 register_semaphore_permit,
             };
+
+            println!("register");
+            print_state(&locked_stream.state);
         }
+
 
         return StreamHandle {
             stream: the_stream,
@@ -114,7 +129,9 @@ impl StreamsManager {
             match stream_state {
                 StreamState::Sent {
                     register_semaphore_permit,
-                } => {
+                } |
+                StreamState::Registered{register_semaphore_permit} 
+                => {
                     locked_stream.state = StreamState::Responded {
                         register_semaphore_permit,
                         response,
@@ -129,8 +146,12 @@ impl StreamsManager {
                     locked_stream.response_waker = None;
                     self.free_streams.lock().unwrap().push(the_stream.clone());
                     // Semaphore register permit gets dropped here
+                },
+                _ => {
+                    println!("{:?}", response);
+                    print_state(&stream_state);
+                    println!("Bad server response!");
                 }
-                _ => println!("Bad server response!"),
             };
         }
 
@@ -158,6 +179,9 @@ impl StreamHandle {
 
     pub fn mark_request_sent(&self) {
         let locked_stream: &mut Stream = &mut self.stream.lock().unwrap();
+        println!("poll");
+        print_state(&locked_stream.state);
+
         let mut stream_state: StreamState = StreamState::Free;
         std::mem::swap(&mut stream_state, &mut locked_stream.state);
 
@@ -165,12 +189,15 @@ impl StreamHandle {
             register_semaphore_permit,
         } = stream_state
         {
-            stream_state = StreamState::Sent {
+            locked_stream.state = StreamState::Sent {
                 register_semaphore_permit,
             };
-        } else {
-            unreachable!();
         }
+        else {
+            locked_stream.state = stream_state;
+        }
+
+        print_state(&locked_stream.state);
     }
 
     pub fn get_response(self) -> StreamResponseFuture {
@@ -182,6 +209,8 @@ impl StreamHandle {
 
 impl Drop for StreamHandle {
     fn drop(&mut self) {
+        println!("Dropping handle!");
+
         let locked_stream: &mut Stream = &mut self.stream.lock().unwrap();
         locked_stream.response_waker = None;
 
@@ -203,7 +232,7 @@ impl Drop for StreamHandle {
                     .unwrap()
                     .push(self.stream.clone());
                 // Register semaphore permit gets dropped here
-            }
+            },
             StreamState::Responded {
                 register_semaphore_permit,
                 response,
@@ -216,7 +245,7 @@ impl Drop for StreamHandle {
                     .unwrap()
                     .push(self.stream.clone());
                 // Register semaphore permit gets dropped here
-            }
+            },
             StreamState::Sent {
                 register_semaphore_permit,
             } => {
@@ -224,11 +253,9 @@ impl Drop for StreamHandle {
                 locked_stream.state = StreamState::SentButAbandoned {
                     register_semaphore_permit,
                 };
-            }
+            },
             StreamState::Free => unreachable!(),
-            StreamState::SentButAbandoned {
-                register_semaphore_permit,
-            } => unreachable!(),
+            StreamState::SentButAbandoned {..} => unreachable!(),
         };
     }
 }
@@ -262,8 +289,12 @@ impl Future for StreamResponseFuture {
                 StreamState::Finished { .. } => unreachable!(),
                 _ => {
                     locked_stream.response_waker = Some(context.waker().clone());
+                    locked_stream.state = stream_state;
                 }
             };
+
+            println!("poll");
+            print_state(&locked_stream.state);
         } else {
             panic!("StreamResponseFuture polled after completion");
         }
