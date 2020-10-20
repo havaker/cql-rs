@@ -4,6 +4,7 @@ pub mod types;
 
 pub use request::Request;
 pub use response::Response;
+pub use types::Header;
 pub use types::StreamId;
 
 #[cfg(test)]

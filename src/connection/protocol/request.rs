@@ -1,3 +1,4 @@
+use super::Header;
 use super::StreamId;
 use bytes::BufMut;
 use std::collections::HashMap;
@@ -14,15 +15,18 @@ impl<'a> Request<'a> {
         stream_id: StreamId,
         writer: &mut T,
     ) -> Result<(), std::io::Error> {
-        // TODO move writing header to another funciton
-        writer.write_u8(0x04).await?; // protocol version for request
-        writer.write_u8(0).await?; // no flags
-        writer.write_u16(stream_id).await?;
-        writer.write_u8(self.opcode()).await?;
-
         let body = self.body();
-        writer.write_u32(body.len() as u32).await?;
-        writer.write_all(body.as_slice()).await
+
+        let mut header = Header {
+            protocol_version: 0x04,
+            flags: 0,
+            stream_id: stream_id,
+            opcode: self.opcode(),
+            body_length: body.len() as u32,
+        };
+
+        header.serialize(writer).await?;
+        return writer.write_all(body.as_slice()).await;
     }
 
     // https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L166

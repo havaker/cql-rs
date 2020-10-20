@@ -1,3 +1,4 @@
+use super::Header;
 use super::StreamId;
 use bytes::Buf;
 use tokio::io::AsyncReadExt;
@@ -21,27 +22,23 @@ impl Response {
     pub async fn read<T: AsyncReadExt + Unpin>(
         reader: &mut T,
     ) -> Result<(Response, StreamId), std::io::Error> {
-        let protocol_version = reader.read_u8().await?;
-        if protocol_version != 0x84 {
+        let header = Header::deserialize(reader).await?;
+
+        if header.protocol_version != 0x84 {
             return Err(make_invalid_response_error());
         }
-        reader.read_u8().await?; // ignore received flags TODO check
-        let stream_id: StreamId = reader.read_u16().await?;
 
-        let opcode = reader.read_u8().await?;
-
-        let mut response = Response::from_opcode(opcode);
+        let mut response = Response::from_opcode(header.opcode);
         if response == Response::Invalid {
             return Err(make_invalid_response_error());
         }
 
-        let body_len = reader.read_u32().await?;
-        let mut body_buf = vec![0u8; body_len as usize];
+        let mut body_buf = vec![0u8; header.body_length as usize];
 
         reader.read_exact(&mut body_buf).await?;
         response.parse_body(body_buf.as_slice())?;
 
-        return Ok((Response::Ready, stream_id));
+        return Ok((Response::Ready, header.stream_id));
     }
 
     // https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L166
@@ -89,7 +86,8 @@ mod tests {
     use tokio_test::io::Builder;
 
     #[test]
-    fn test_ready_response_reading() {
+    #[ignore]
+    fn test_startup_scylla_response() {
         let ready_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
 
         tokio_test::block_on(async {
