@@ -1,5 +1,4 @@
 use crate::Query;
-use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -296,16 +295,18 @@ impl Connection {
             tokio::spawn(async move {
                 let response_reader: BufReader<OwnedReadHalf> = BufReader::new(read_half);
                 loop {
-                    // read response
-                    // TODO
-                    let response: protocol::Response = protocol::Response {};
+                    // TODO read response
+                    let response: protocol::Response = protocol::Response::Ready;
                     streams_manager.on_response_received(response);
                 }
             });
         }
 
         // Start request sender task
-        let (sender_channel_sender, mut sender_channel_receiver): (tokio::sync::mpsc::Sender<(protocol::Request<'static>, StreamId)>, tokio::sync::mpsc::Receiver<(protocol::Request<'static>, StreamId)>) = tokio::sync::mpsc::channel(1);
+        let (sender_channel_sender, mut sender_channel_receiver): (
+            tokio::sync::mpsc::Sender<(protocol::Request<'static>, StreamId)>,
+            tokio::sync::mpsc::Receiver<(protocol::Request<'static>, StreamId)>,
+        ) = tokio::sync::mpsc::channel(1);
         {
             let streams_manager = streams_manager.clone();
             tokio::spawn(async move {
@@ -331,13 +332,18 @@ impl Connection {
 
         let stream_handle: StreamHandle = self.streams_manager.register_stream().await;
 
-        self.schedule_request_send(request, stream_handle.get_stream_id()).await;
+        self.schedule_request_send(request, stream_handle.get_stream_id())
+            .await;
         stream_handle.mark_request_sent();
 
         return stream_handle.get_response().await;
     }
 
-    async fn schedule_request_send(&mut self, request: protocol::Request<'static>, stream_id: StreamId) {
+    async fn schedule_request_send(
+        &mut self,
+        request: protocol::Request<'static>,
+        stream_id: StreamId,
+    ) {
         if let Err(_) = self.sender_channel.send((request, stream_id)).await {
             panic!("oops ending request failed"); //TODO make graceful
         }
