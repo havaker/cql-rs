@@ -17,10 +17,10 @@ impl<'a> Request<'a> {
     ) -> Result<(), std::io::Error> {
         let body = self.body();
 
-        let mut header = Header {
+        let header = Header {
             protocol_version: 0x04,
             flags: 0,
-            stream_id: stream_id,
+            stream_id,
             opcode: self.opcode(),
             body_length: body.len() as u32,
         };

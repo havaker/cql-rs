@@ -36,7 +36,9 @@ impl Response {
         let mut body_buf = vec![0u8; header.body_length as usize];
 
         reader.read_exact(&mut body_buf).await?;
+        println!("{:?}", response);
         response.parse_body(body_buf.as_slice())?;
+        println!("{:?}", response);
 
         return Ok((Response::Ready, header.stream_id));
     }
@@ -84,20 +86,6 @@ fn make_invalid_response_error() -> std::io::Error {
 mod tests {
     use super::*;
     use tokio_test::io::Builder;
-
-    #[test]
-    #[ignore]
-    fn test_startup_scylla_response() {
-        let ready_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
-
-        tokio_test::block_on(async {
-            let mut mock = Builder::new().read(&ready_response).build();
-            let (rsp, stream_id) = Response::read(&mut mock).await.unwrap();
-
-            assert_eq!(rsp, Response::Ready);
-            assert_eq!(stream_id, 0);
-        });
-    }
 
     #[test]
     fn test_ready_response_reading() {
