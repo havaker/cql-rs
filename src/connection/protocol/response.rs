@@ -63,7 +63,8 @@ impl Response {
                 // [string] read string with error message
                 let string_len = body.get_u16();
                 let mut string_content = vec![0u8; string_len as usize];
-                if body.remaining() != string_len as usize {
+                // ignore additional info, that error body can have
+                if body.remaining() < string_len as usize {
                     return Err(make_invalid_response_error());
                 }
                 body.copy_to_slice(&mut string_content);
