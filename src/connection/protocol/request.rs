@@ -32,6 +32,7 @@ impl<'a> Request<'a> {
     }
 
     // TODO get rid of vec allocation for every request
+    // e.g. split this to 2 funcitons, one for writing, second for size computation
     fn body(&self) -> Vec<u8> {
         match self {
             Self::Startup => {
@@ -84,31 +85,38 @@ fn serialize_query(query: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpStream;
     use tokio_test::io::Builder;
 
     #[test]
     fn test_startup_serialization() {
-        let expected_startup = vec![
+        let expected_startup = [
             4u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8, 22u8, 0u8, 1u8, 0u8, 11u8, 67u8, 81u8, 76u8,
             95u8, 86u8, 69u8, 82u8, 83u8, 73u8, 79u8, 78u8, 0u8, 5u8, 51u8, 46u8, 48u8, 46u8, 48u8,
         ];
 
         let req = Request::Startup;
         tokio_test::block_on(async {
-            let mut mock = Builder::new().write(expected_startup.as_slice()).build();
+            let mut mock = Builder::new().write(&expected_startup).build();
             req.write(0, &mut mock).await.unwrap();
         });
     }
 
     #[test]
     #[ignore]
-    fn test_startup_tcp() {
+    fn test_startup_scylla_response() {
         let req = Request::Startup;
+        let expected_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
 
         tokio_test::block_on(async {
-            let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+            let mut stream = TcpStream::connect("127.0.0.1:9042").await.unwrap();
             req.write(0, &mut stream).await.unwrap();
+
+            let mut response = expected_response.clone();
+            stream.read_exact(&mut response).await.unwrap();
+
+            assert_eq!(expected_response, response);
         });
     }
 }
