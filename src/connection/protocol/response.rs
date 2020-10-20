@@ -86,7 +86,6 @@ mod tests {
     use tokio_test::io::Builder;
 
     #[test]
-    #[ignore]
     fn test_startup_scylla_response() {
         let ready_response = [0x84, 0, 0, 0, 2, 0, 0, 0, 0];
 
