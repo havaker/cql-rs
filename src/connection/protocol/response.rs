@@ -36,11 +36,9 @@ impl Response {
         let mut body_buf = vec![0u8; header.body_length as usize];
 
         reader.read_exact(&mut body_buf).await?;
-        println!("{:?}", response);
         response.parse_body(body_buf.as_slice())?;
-        println!("{:?}", response);
 
-        return Ok((Response::Ready, header.stream_id));
+        return Ok((response, header.stream_id));
     }
 
     // https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L166
@@ -97,6 +95,31 @@ mod tests {
 
             assert_eq!(rsp, Response::Ready);
             assert_eq!(stream_id, 0);
+        });
+    }
+
+    #[test]
+    fn test_error_response_reading() {
+        let error_response = [
+            0x84, 0x00, 0x7f, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x20, 0x00, 0x00,
+            0x32, 0x6c, 0x69, 0x6e, 0x65, 0x20, 0x31, 0x3a, 0x30, 0x20, 0x6e, 0x6f, 0x20, 0x76,
+            0x69, 0x61, 0x62, 0x6c, 0x65, 0x20, 0x61, 0x6c, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x74,
+            0x69, 0x76, 0x65, 0x20, 0x61, 0x74, 0x20, 0x69, 0x6e, 0x70, 0x75, 0x74, 0x20, 0x27,
+            0x73, 0x61, 0x64, 0x73, 0x64, 0x61, 0x73, 0x64, 0x27,
+        ];
+
+        tokio_test::block_on(async {
+            let mut mock = Builder::new().read(&error_response).build();
+            let (rsp, stream_id) = Response::read(&mut mock).await.unwrap();
+
+            assert_eq!(
+                rsp,
+                Response::Error(ErrorMessage {
+                    code: 8192,
+                    message: String::from("line 1:0 no viable alternative at input \'sadsdasd\'"),
+                })
+            );
+            assert_eq!(stream_id, 32766);
         });
     }
 }
