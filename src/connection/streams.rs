@@ -96,9 +96,11 @@ impl StreamsManager {
         };
     }
 
-    fn on_response_received(self: &Arc<Self>, response: protocol::Response) {
-        let stream_id: StreamId = 0; // TODO - initialize here
-
+    pub fn on_response_received(
+        self: &Arc<Self>,
+        response: protocol::Response,
+        stream_id: StreamId,
+    ) {
         let the_stream: &SharedStream = &self.streams[stream_id as usize];
 
         let mut waker_to_call: Option<Waker> = None;
@@ -135,7 +137,7 @@ impl StreamsManager {
         }
     }
 
-    fn on_receive_error(self: &Arc<Self>, error: std::io::Error) {
+    pub fn on_receive_error(self: &Arc<Self>, error: std::io::Error) {
         unimplemented!();
     }
 }

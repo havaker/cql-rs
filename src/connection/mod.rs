@@ -27,13 +27,16 @@ impl Connection {
         startup_request.write(1, &mut tcp_writer).await?;
 
         // Receive response
-        /*
-        let response: protocol::Response = protocol::Response::read(&mut tcp_reader).await ?;
+        let (response, _stream_id) = protocol::Response::read(&mut tcp_reader).await?;
         match response {
-            protocol::Response::Ready => {/* Ok connection succesfull */},
-            _ => return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to connect to server - response was not Ready"))
+            protocol::Response::Ready => { /* Ok connection succesfull */ }
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to connect to server - response was not Ready",
+                ))
+            }
         };
-        */
 
         let streams_manager: Arc<StreamsManager> = StreamsManager::new();
 
@@ -44,8 +47,15 @@ impl Connection {
                 let mut tcp_reader = tcp_reader; // Explicitly move tcp_reader into async task
                 loop {
                     // read response
-                    // let response: protocol::Response = protocol::Response::read(&mut tcp_reader).await ?;
-                    //streams_manager.on_response_received(response);
+                    match protocol::Response::read(&mut tcp_reader).await {
+                        Ok((response, stream_id)) => {
+                            streams_manager.on_response_received(response, stream_id)
+                        }
+                        Err(io_error) => {
+                            streams_manager.on_receive_error(io_error);
+                            break;
+                        }
+                    }
                 }
             });
         }
