@@ -13,7 +13,7 @@ mod tests {
     use tokio::net::TcpStream;
 
     #[test]
-    //#[ignore]
+    #[ignore]
     fn test_startup_scylla() {
         let startup_request = Request::Startup;
 

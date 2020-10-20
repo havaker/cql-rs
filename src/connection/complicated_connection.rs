@@ -113,20 +113,3 @@ impl Connection {
         }
     }
 }
-
-#[cfg(test)]
-#[test]
-fn test_connect_to_scylla() {
-    tokio_test::block_on(async {
-        let mut conn = Connection::new("172.17.0.4:9042").await.unwrap();
-        println!("Connected!");
-
-        //println!("{:?}", conn.query(Query::new("sadsdasd")).await.unwrap());
-
-        let query1 = conn.query(Query::new("sadsdasd"));
-        //let query2 = conn.query(Query::new("sadsdasd"));
-
-        query1.await;
-        //futures::join!(query1, query2);
-    });
-}
