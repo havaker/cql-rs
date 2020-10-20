@@ -1,3 +1,4 @@
+use super::StreamId;
 use bytes::BufMut;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
@@ -10,7 +11,7 @@ pub enum Request<'a> {
 impl<'a> Request<'a> {
     pub async fn write<T: AsyncWriteExt + Unpin>(
         &self,
-        stream_id: u16,
+        stream_id: StreamId,
         writer: &mut T,
     ) -> Result<(), std::io::Error> {
         // TODO move writing header to another funciton
@@ -24,6 +25,7 @@ impl<'a> Request<'a> {
         writer.write_all(body.as_slice()).await
     }
 
+    // https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec#L166
     fn opcode(&self) -> u8 {
         match self {
             Self::Startup => 0x01,
