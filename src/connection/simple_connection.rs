@@ -41,7 +41,7 @@ impl Connection {
     }
 
     pub async fn query(&mut self, query_to_perform: Query) -> Result<(), QueryError> {
-        let request: Request = Request::Query(&query_to_perform.get_query_text());
+        let request: Request = Request::Query(query_to_perform.get_query_text());
 
         request.write(1, &mut self.tcp_writer).await ?;
         self.tcp_writer.flush().await ?;

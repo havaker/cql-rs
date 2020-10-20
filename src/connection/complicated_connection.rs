@@ -10,7 +10,7 @@ use crate::QueryError;
 
 pub struct Connection {
     streams_manager: Arc<StreamsManager>,
-    sender_channel: tokio::sync::mpsc::Sender<(Request<'static>, StreamId)>,
+    sender_channel: tokio::sync::mpsc::Sender<(Request, StreamId)>,
 }
 
 impl Connection {
@@ -62,8 +62,8 @@ impl Connection {
 
         // Start request sender task
         let (sender_channel_sender, mut sender_channel_receiver): (
-            tokio::sync::mpsc::Sender<(Request<'static>, StreamId)>,
-            tokio::sync::mpsc::Receiver<(Request<'static>, StreamId)>,
+            tokio::sync::mpsc::Sender<(Request, StreamId)>,
+            tokio::sync::mpsc::Receiver<(Request, StreamId)>,
         ) = tokio::sync::mpsc::channel(1);
         {
             //let streams_manager = streams_manager.clone();
@@ -84,7 +84,7 @@ impl Connection {
     }
 
     pub async fn query(&self, query_to_perform: Query) -> Result<(), QueryError> {
-        let request: Request = Request::Query(&query_to_perform.get_query_text());
+        let request: Request = Request::Query(query_to_perform.get_query_text());
 
         let stream_handle: StreamHandle = self.streams_manager.register_stream().await;
 
@@ -100,7 +100,7 @@ impl Connection {
         };
     }
 
-    async fn schedule_request_send(&self, request: Request<'static>, stream_id: StreamId) {
+    async fn schedule_request_send(&self, request: Request, stream_id: StreamId) {
         if let Err(_) = self.sender_channel.clone().send((request, stream_id)).await {
             panic!("oops ending request failed"); //TODO make graceful
         }

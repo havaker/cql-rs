@@ -4,12 +4,12 @@ use bytes::BufMut;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 
-pub enum Request<'a> {
+pub enum Request {
     Startup,
-    Query(&'a str),
+    Query(String),
 }
 
-impl<'a> Request<'a> {
+impl Request {
     pub async fn write<T: AsyncWriteExt + Unpin>(
         &self,
         stream_id: StreamId,
