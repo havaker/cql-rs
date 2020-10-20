@@ -146,6 +146,7 @@ impl StreamsManager {
                     println!("Responded!");
                 }
                 StreamState::SentButAbandoned { .. } => {
+                    println!("Freeing state!");
                     // This stream has been abandoned by caller so let's just free it
                     locked_stream.response_waker = None;
                     self.free_streams.lock().unwrap().push(the_stream.clone());
@@ -225,6 +226,7 @@ impl Drop for StreamHandle {
             StreamState::Registered { .. } | StreamState::Finished { .. } => {
                 // Should be freed
                 // Put on free queue
+                println!("Freeing state!");
                 self.streams_manager
                     .free_streams
                     .lock()
@@ -235,6 +237,7 @@ impl Drop for StreamHandle {
             StreamState::Responded { .. } => {
                 // Should be freed
                 // Put on free queue
+                println!("Freeing state!");
                 self.streams_manager
                     .free_streams
                     .lock()
@@ -269,6 +272,9 @@ impl Future for StreamResponseFuture {
         if let Some(stream_handle) = &self.stream_handle {
             let locked_stream: &mut Stream = &mut stream_handle.stream.lock().unwrap();
 
+            println!("poll");
+            print_state(&locked_stream.state);
+
             let mut stream_state: StreamState = StreamState::Free;
             std::mem::swap(&mut stream_state, &mut locked_stream.state);
 
@@ -289,7 +295,6 @@ impl Future for StreamResponseFuture {
                 }
             };
 
-            println!("poll");
             print_state(&locked_stream.state);
         } else {
             panic!("StreamResponseFuture polled after completion");
