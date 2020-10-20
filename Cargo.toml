@@ -8,3 +8,4 @@ edition = "2018"
 tokio = {version = "0.3.0", features = ["net", "io-util", "sync"]}
 tokio-test = "0.3.0"
 bytes = "0.5"
+futures = "0.3"

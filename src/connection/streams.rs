@@ -49,7 +49,7 @@ impl StreamsManager {
         let total_streams_possible: usize = (StreamId::max_value() as usize) + 1;
 
         let mut streams: Vec<SharedStream> = Vec::with_capacity(total_streams_possible);
-        for i in 0..streams.len() {
+        for i in 0..total_streams_possible {
             streams.push(Arc::new(std::sync::Mutex::new(Stream {
                 id: i as StreamId,
                 response_waker: None,
@@ -65,6 +65,8 @@ impl StreamsManager {
                 locked_free_streams.push(stream.clone());
             }
         }
+        println!("Created free_streams size: {}", free_streams.lock().unwrap().len());
+
 
         return Arc::new(StreamsManager {
             streams,
