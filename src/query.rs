@@ -8,6 +8,6 @@ impl Query {
     }
 
     pub fn get_query_text(&self) -> &'static str {
-        return self.query_text.clone();
+        return self.query_text;
     }
 }

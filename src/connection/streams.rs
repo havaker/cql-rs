@@ -1,11 +1,9 @@
 use super::protocol;
 use protocol::types::StreamId;
-use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 // Stream keeps information about protocol stream with given id
@@ -24,6 +22,7 @@ enum StreamState {
         register_semaphore_permit: OwnedSemaphorePermit,
     },
     SentButAbandoned {
+        #[allow(dead_code)]
         register_semaphore_permit: OwnedSemaphorePermit,
     },
     Responded {
@@ -31,18 +30,19 @@ enum StreamState {
         response: protocol::Response,
     },
     Finished {
+        #[allow(dead_code)]
         register_semaphore_permit: OwnedSemaphorePermit,
     },
 }
 
 fn print_state(state: &StreamState) {
     match state {
-        Free => println!("Free"),
-        Registered => println!("Registered"),
-        Sent => println!("Sent"),
-        SentButAbandoned => println!("SentButAbandoned"),
-        Responded => println!("Responded"),
-        Finished => println!("Finished"),
+        StreamState::Free => println!("Free"),
+        StreamState::Registered { .. } => println!("Registered"),
+        StreamState::Sent { .. } => println!("Sent"),
+        StreamState::SentButAbandoned { .. } => println!("SentButAbandoned"),
+        StreamState::Responded { .. } => println!("Responded"),
+        StreamState::Finished { .. } => println!("Finished"),
     };
 }
 
@@ -68,7 +68,7 @@ impl StreamsManager {
             })));
         }
 
-        let mut free_streams: std::sync::Mutex<Vec<SharedStream>> =
+        let free_streams: std::sync::Mutex<Vec<SharedStream>> =
             std::sync::Mutex::new(Vec::with_capacity(total_streams_possible));
         {
             let locked_free_streams: &mut Vec<SharedStream> = &mut free_streams.lock().unwrap();
@@ -76,8 +76,10 @@ impl StreamsManager {
                 locked_free_streams.push(stream.clone());
             }
         }
-        println!("Created free_streams size: {}", free_streams.lock().unwrap().len());
-
+        println!(
+            "Created free_streams size: {}",
+            free_streams.lock().unwrap().len()
+        );
 
         return Arc::new(StreamsManager {
             streams,
@@ -106,7 +108,6 @@ impl StreamsManager {
             print_state(&locked_stream.state);
         }
 
-
         return StreamHandle {
             stream: the_stream,
             streams_manager: self.clone(),
@@ -126,31 +127,35 @@ impl StreamsManager {
             let mut stream_state: StreamState = StreamState::Free;
             std::mem::swap(&mut stream_state, &mut locked_stream.state);
 
+            println!("Received response");
+            print_state(&stream_state);
+
             match stream_state {
                 StreamState::Sent {
                     register_semaphore_permit,
-                } |
-                StreamState::Registered{register_semaphore_permit} 
-                => {
+                }
+                | StreamState::Registered {
+                    register_semaphore_permit,
+                } => {
                     locked_stream.state = StreamState::Responded {
                         register_semaphore_permit,
                         response,
                     };
 
                     waker_to_call = locked_stream.response_waker.take();
+                    println!("Responded!");
                 }
-                StreamState::SentButAbandoned {
-                    register_semaphore_permit,
-                } => {
+                StreamState::SentButAbandoned { .. } => {
                     // This stream has been abandoned by caller so let's just free it
                     locked_stream.response_waker = None;
                     self.free_streams.lock().unwrap().push(the_stream.clone());
                     // Semaphore register permit gets dropped here
-                },
+                }
                 _ => {
                     println!("{:?}", response);
                     print_state(&stream_state);
                     println!("Bad server response!");
+                    locked_stream.state = stream_state;
                 }
             };
         }
@@ -160,7 +165,7 @@ impl StreamsManager {
         }
     }
 
-    pub fn on_receive_error(self: &Arc<Self>, error: std::io::Error) {
+    pub fn on_receive_error(self: &Arc<Self>, _error: std::io::Error) {
         unimplemented!();
     }
 }
@@ -192,8 +197,7 @@ impl StreamHandle {
             locked_stream.state = StreamState::Sent {
                 register_semaphore_permit,
             };
-        }
-        else {
+        } else {
             locked_stream.state = stream_state;
         }
 
@@ -218,12 +222,17 @@ impl Drop for StreamHandle {
         std::mem::swap(&mut stream_state, &mut locked_stream.state);
 
         match stream_state {
-            StreamState::Registered {
-                register_semaphore_permit,
+            StreamState::Registered { .. } | StreamState::Finished { .. } => {
+                // Should be freed
+                // Put on free queue
+                self.streams_manager
+                    .free_streams
+                    .lock()
+                    .unwrap()
+                    .push(self.stream.clone());
+                // Register semaphore permit gets dropped here
             }
-            | StreamState::Finished {
-                register_semaphore_permit,
-            } => {
+            StreamState::Responded { .. } => {
                 // Should be freed
                 // Put on free queue
                 self.streams_manager
@@ -232,20 +241,7 @@ impl Drop for StreamHandle {
                     .unwrap()
                     .push(self.stream.clone());
                 // Register semaphore permit gets dropped here
-            },
-            StreamState::Responded {
-                register_semaphore_permit,
-                response,
-            } => {
-                // Should be freed
-                // Put on free queue
-                self.streams_manager
-                    .free_streams
-                    .lock()
-                    .unwrap()
-                    .push(self.stream.clone());
-                // Register semaphore permit gets dropped here
-            },
+            }
             StreamState::Sent {
                 register_semaphore_permit,
             } => {
@@ -253,9 +249,9 @@ impl Drop for StreamHandle {
                 locked_stream.state = StreamState::SentButAbandoned {
                     register_semaphore_permit,
                 };
-            },
+            }
             StreamState::Free => unreachable!(),
-            StreamState::SentButAbandoned {..} => unreachable!(),
+            StreamState::SentButAbandoned { .. } => unreachable!(),
         };
     }
 }
