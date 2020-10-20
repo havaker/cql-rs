@@ -2,7 +2,7 @@ use super::StreamId;
 use bytes::Buf;
 use tokio::io::AsyncReadExt;
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Response {
     Ready,
     Error(ScyllaError),

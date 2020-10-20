@@ -7,6 +7,7 @@ use std::sync::Arc;
 use streams::{StreamHandle, StreamsManager};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::io::AsyncWriteExt;
 
 struct Connection {
     streams_manager: Arc<StreamsManager>,
@@ -15,17 +16,14 @@ struct Connection {
 
 impl Connection {
     pub async fn new<A: ToSocketAddrs>(address: A) -> Result<Self, std::io::Error> {
-        let tcp_stream: TcpStream = tokio::net::TcpStream::connect(address).await?;
+        let mut tcp_stream: TcpStream = tokio::net::TcpStream::connect(address).await?;
         let (tcp_read_half, tcp_write_half) = tcp_stream.into_split();
-        let (mut tcp_reader, mut tcp_writer) = (
-            BufReader::new(tcp_read_half),
-            BufWriter::new(tcp_write_half),
-        );
-
+        let (mut tcp_reader, mut tcp_writer) = (BufReader::new(tcp_read_half), BufWriter::new(tcp_write_half));
         // Send startup request
         let startup_request = protocol::Request::Startup;
         startup_request.write(1, &mut tcp_writer).await?;
-
+        tcp_writer.flush().await?;
+        
         // Receive response
         let (response, _stream_id) = protocol::Response::read(&mut tcp_reader).await?;
         match response {
@@ -37,6 +35,7 @@ impl Connection {
                 ))
             }
         };
+        
 
         let streams_manager: Arc<StreamsManager> = StreamsManager::new();
 
@@ -71,6 +70,9 @@ impl Connection {
                 let mut tcp_writer = tcp_writer;
                 while let Some((request, stream_id)) = sender_channel_receiver.recv().await {
                     request.write(stream_id, &mut tcp_writer).await.unwrap();
+                    tcp_writer.flush().await.unwrap();
+                    println!("Sent a query!");
+                    panic!();
                 }
             });
         }
@@ -85,12 +87,12 @@ impl Connection {
         &mut self,
         query_to_perform: Query,
     ) -> Result<protocol::Response, std::io::Error> {
-        let request: protocol::Request = protocol::Request::Query("hehe"); // = protocol::Request::from_query(query_to_perform, request_handle.get_stream_id());
+        let request: protocol::Request = protocol::Request::Query(&query_to_perform.get_query_text());
 
         let stream_handle: StreamHandle = self.streams_manager.register_stream().await;
 
-        self.schedule_request_send(request, stream_handle.get_stream_id())
-            .await;
+        self.schedule_request_send(request, stream_handle.get_stream_id()).await;
+        // What if we receive response here?
         stream_handle.mark_request_sent();
 
         return stream_handle.get_response().await;
@@ -105,4 +107,27 @@ impl Connection {
             panic!("oops ending request failed"); //TODO make graceful
         }
     }
+}
+
+
+#[cfg(test)]
+#[ignore]
+#[test]
+fn test_connect_to_scylla() {
+    tokio_test::block_on(async {
+        let mut conn = Connection::new("172.17.0.4:9042").await.unwrap();
+        println!("Connected!");
+        
+        println!("{:?}", conn.query(Query::new("sadsdasd")).await.unwrap());
+        panic!();
+        /*
+
+        let query1 = conn.query(Query::new("sadsdasd"));
+        let query2 = conn.query(Query::new("sadsdasd"));
+
+        drop(conn);
+
+        futures::join!(query1, query2);
+        */
+    });
 }
