@@ -8,6 +8,13 @@ use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use crate::QueryError;
 
+/*
+    This is an attempt at more advanced Connection handler supporting multiple simulatous streams automatically
+    It would handle future drops before completion and beutiful error handling
+    It is bugged and non functional
+    Stream.state erronously gets set to Free somewhere before reading response
+*/
+
 pub struct Connection {
     streams_manager: Arc<StreamsManager>,
     sender_channel: tokio::sync::mpsc::Sender<(Request, StreamId)>,
@@ -106,14 +113,6 @@ impl Connection {
         }
     }
 }
-
-/*
-use futures::{
-    future::FutureExt, // for `.fuse()`
-    pin_mut,
-    select,
-};
-*/
 
 #[cfg(test)]
 #[test]
